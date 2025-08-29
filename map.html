@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>【完成版】日本・モンゴル 交流自治体マップ (分野別カラー)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; }
+        #container { display: flex; height: 100%; }
+        #map { width: 65%; height: 100%; }
+        #info-panel {
+            width: 35%;
+            height: 100%;
+            overflow-y: auto;
+            padding: 20px;
+            box-sizing: border-box;
+            background-color: #f8f9fa;
+            border-left: 1px solid #dee2e6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        #info-panel h2 { margin-top: 0; font-size: 1.5rem; color: #333; }
+        #info-panel h3 { font-size: 1.2rem; color: #555; border-bottom: 2px solid #6c757d; padding-bottom: 5px; margin-top: 20px; }
+        #info-panel p, #info-panel li { font-size: 0.95rem; line-height: 1.6; }
+        .initial-text { color: #888; text-align: center; padding-top: 50px; }
+        .activity-list { list-style: none; padding-left: 0; }
+        .activity-list li { background-color: #fff; border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
+        .field-badge { display: block; width: fit-content; padding: 3px 8px; border-radius: 12px; color: white; font-size: 0.85rem; margin-bottom: 5px; }
+        .activity-list li p { margin-top: 8px; margin-bottom: 0; }
+        .contact-info { background-color: #e9ecef; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 0.9rem; }
+        .website-links p { margin: 5px 0; }
+        .website-links a { text-decoration: none; color: #007bff; font-weight: bold; }
+        .website-links a:hover { text-decoration: underline; }
+        .number-marker { width: 24px; height: 24px; border-radius: 50% 50% 50% 0; position: absolute; transform: rotate(-45deg); left: 50%; top: 50%; margin: -12px 0 0 -12px; border: 2px solid #fff; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
+        .number-marker span { position: absolute; width: 24px; height: 24px; line-height: 24px; text-align: center; transform: rotate(45deg); color: #fff; font-size: 12px; font-weight: bold; }
+        .cir-badge { display: inline-block; background-color: #17a2b8; color: white; padding: 4px 10px; border-radius: 15px; font-size: 0.9rem; font-weight: bold; margin-top: 10px; margin-bottom: 5px; }
+        
+        /* ▼▼▼ 新しく追加したスタイル ▼▼▼ */
+        .city-selection-list { list-style: none; padding: 0; }
+        .city-selection-item {
+            background: #fff; border: 1px solid #ddd; padding: 12px; margin-bottom: 8px;
+            border-radius: 5px; cursor: pointer; transition: background-color 0.2s; font-weight: bold;
+        }
+        .city-selection-item:hover { background-color: #e9ecef; }
+        /* ▲▲▲ ここまで ▲▲▲ */
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <div id="map"></div>
+    <div id="info-panel">
+        <div id="info-content">
+            <h2>日本・モンゴル 交流自治体マップ</h2>
+            <p class="initial-text">地図上のマーカーをクリックすると、ここに詳細情報が表示されます。</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    const map = L.map('map').setView([42, 125], 3);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+    
+    const fieldColors = {
+        "教育・青少年交流": "#dc3545", "農業・技術協力": "#28a745", "農業・環境": "#28a745",
+        "医療・福祉": "#6f42c1", "文化・スポーツ交流": "#fd7e14", "スポーツ": "#fd7e14",
+        "歴史・文化交流": "#ffc107", "経済・観光振興": "#6f42c1", "行政・技術協力": "#17a2b8",
+        "環境・技術協力": "#20c997", "JICA草の根事業": "#007bff", "その他": "#6c757d",
+        "文化・観光振興": "#fd7e14", "スポーツ・文化交流": "#fd7e14", "教育・技術協力": "#dc3545",
+        "観光・文化交流": "#ffc107"
+    };
+
+    const infoContent = document.getElementById('info-content');
+    let allData = []; // 全データを保持する変数を定義
+
+    // ▼▼▼ NEW FUNCTION: 特定の都市の詳細を表示する関数 ▼▼▼
+    function displayCityDetails(data) {
+        let activitiesHtml = '<ul class="activity-list">';
+        (data.activities || []).forEach(activity => {
+            let badgesHtml = '';
+            const fields = Array.isArray(activity.field) ? activity.field : [activity.field];
+            fields.forEach(fieldName => {
+                const badgeColor = fieldColors[fieldName] || '#6c757d';
+                badgesHtml += `<span class="field-badge" style="background-color: ${badgeColor};">${fieldName}</span>`;
+            });
+            activitiesHtml += `<li>${badgesHtml}<p>${activity.detail}</p></li>`;
+        });
+        activitiesHtml += '</ul>';
+    
+        let websiteHtml = '';
+        if (data.website && data.website.length > 0) {
+            websiteHtml = '<div class="website-links">';
+            data.website.forEach((url, index) => {
+                if (url) {
+                     websiteHtml += `<p><a href="${url}" target="_blank" rel="noopener noreferrer">関連ウェブサイト${data.website.length > 1 ? ' ' + (index + 1) : ''}を見る 🔗</a></p>`;
+                }
+            });
+            websiteHtml += '</div>';
+        }
+
+        const cirHtml = data.hasCIR ? `<div class="cir-badge">🌍 モンゴルの国際交流員がいます</div>` : '';
+
+        infoContent.innerHTML = `
+            <h2>${data.jp_city} & ${data.mn_city}</h2>
+            ${cirHtml}
+            <p>${data.summary}</p>
+            <h3>主な活動</h3>
+            ${activitiesHtml}
+            ${websiteHtml}
+            <div class="contact-info">${data.contact}</div>
+        `;
+    }
+
+    // ▼▼▼ NEW FUNCTION: 複数の都市から選択するリストを表示する関数 ▼▼▼
+    function displayCitySelection(cities, locationName) {
+        let listHtml = `<ul class="city-selection-list">`;
+        cities.forEach(city => {
+            listHtml += `<li class="city-selection-item" data-id="${city.id}">${city.jp_city} & (${city.mn_city})</li>`;
+        });
+        listHtml += `</ul>`;
+
+        infoContent.innerHTML = `
+            <h2>連携都市一覧 (${locationName})</h2>
+            <p>この場所と連携している都市が複数あります。詳細を見たい都市を選択してください。</p>
+            ${listHtml}
+        `;
+
+        document.querySelectorAll('.city-selection-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const cityId = parseInt(item.getAttribute('data-id'), 10);
+                const selectedCity = allData.find(city => city.id === cityId);
+                if (selectedCity) {
+                    displayCityDetails(selectedCity);
+                }
+            });
+        });
+    }
+
+    // ▼▼▼ MODIFIED LOGIC: データを緯度経度でグループ化し、マーカーをプロットする ▼▼▼
+    function plotGroupedMarkers() {
+        const jpLocations = new Map();
+        const mnLocations = new Map();
+
+        allData.forEach(city => {
+            const jpKey = `${city.jp_lat},${city.jp_lon}`;
+            if (!jpLocations.has(jpKey)) jpLocations.set(jpKey, []);
+            jpLocations.get(jpKey).push(city);
+
+            const mnKey = `${city.mn_lat},${city.mn_lon}`;
+            if (!mnLocations.has(mnKey)) mnLocations.set(mnKey, []);
+            mnLocations.get(mnKey).push(city);
+        });
+        
+        const createMarker = (citiesInLocation, isJpMarker) => {
+             const representativeCity = citiesInLocation[0];
+             const lat = isJpMarker ? representativeCity.jp_lat : representativeCity.mn_lat;
+             const lon = isJpMarker ? representativeCity.jp_lon : representativeCity.mn_lon;
+             
+             let tooltipText = `${representativeCity.id}. ${isJpMarker ? representativeCity.jp_city : representativeCity.mn_city}`;
+             if (citiesInLocation.length > 1) {
+                 tooltipText = `${citiesInLocation[0].jp_city}など${citiesInLocation.length}件`;
+             }
+
+             const hasJicaProject = citiesInLocation.some(c => (c.activities || []).some(act => Array.isArray(act.field) ? act.field.includes("JICA草の根事業") : act.field === "JICA草の根事業"));
+             const markerColor = hasJicaProject ? "#007bff" : "#87CEFA";
+             const numberIcon = L.divIcon({ html: `<div class="number-marker" style="background-color: ${markerColor};"><span>${representativeCity.id}</span></div>`, className: '', iconSize: [32, 32], iconAnchor: [16, 32] });
+             
+             const marker = L.marker([lat, lon], {icon: numberIcon}).addTo(map).bindTooltip(tooltipText);
+             marker.on('click', () => {
+                 if (citiesInLocation.length > 1) {
+                     displayCitySelection(citiesInLocation, isJpMarker ? representativeCity.jp_city : representativeCity.mn_city);
+                 } else {
+                     displayCityDetails(representativeCity);
+                 }
+             });
+        };
+
+        jpLocations.forEach(cities => createMarker(cities, true));
+        mnLocations.forEach(cities => createMarker(cities, false));
+    }
+
+    // CSVパーサー
+    function parseCSV(text) {
+        const lines = text.trim().split('\n');
+        const headers = lines[0].split(',').map(h => h.trim());
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+            const row = {};
+            headers.forEach((header, j) => {
+                let value = values[j] || '';
+                if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+                row[header] = value.trim();
+            });
+            rows.push(row);
+        }
+        return rows;
+    }
+
+    // メインの処理
+    async function main() {
+        try {
+            const response = await fetch('data.csv');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const csvText = await response.text();
+            const parsedData = parseCSV(csvText);
+            
+            const groupedById = new Map();
+            parsedData.forEach(row => {
+                const id = row.id;
+                if (!id) return;
+
+                if (!groupedById.has(id)) {
+                    groupedById.set(id, {
+                        id: parseInt(id, 10),
+                        jp_city: row.jp_city, mn_city: row.mn_city,
+                        jp_lat: parseFloat(row.jp_lat), jp_lon: parseFloat(row.jp_lon),
+                        mn_lat: parseFloat(row.mn_lat), mn_lon: parseFloat(row.mn_lon),
+                        hasCIR: row.hasCIR === 'true', relation: row.relation, summary: row.summary,
+                        website: row.website ? row.website.split('|') : [], contact: row.contact,
+                        activities: []
+                    });
+                }
+                
+                if (row.activity_field && row.activity_detail) {
+                    groupedById.get(id).activities.push({
+                        field: row.activity_field.includes('|') ? row.activity_field.split('|') : row.activity_field,
+                        detail: row.activity_detail
+                    });
+                }
+            });
+            
+            allData = Array.from(groupedById.values());
+            plotGroupedMarkers();
+
+        } catch (error) {
+            console.error("CSVファイルの読み込みまたは処理に失敗しました:", error);
+            infoContent.innerHTML = `<p class="initial-text" style="color: red;">データの読み込みに失敗しました。CSVの形式を確認してください。</p>`;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', main);
+</script>
+</body>
+</html>
